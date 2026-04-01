@@ -120,9 +120,9 @@ static HandlerResult DisplayOptionsPanel_eventHandler(Panel* super, int ch) {
       this->settings->lastUpdate++;
       CRT_updateDelay();
       Header* header = this->scr->header;
-      Header_calculateHeight(header);
       Header_reinit(header);
       Header_updateData(header);
+      Header_calculateHeight(header);
       Header_draw(header);
       ScreenManager_resize(this->scr);
    }
@@ -179,6 +179,8 @@ DisplayOptionsPanel* DisplayOptionsPanel_new(Settings* settings, ScreenManager* 
    Panel_add(super, (Object*) CheckItem_newByRef("Leave a margin around header", &(settings->headerMargin)));
    Panel_add(super, (Object*) CheckItem_newByRef("Detailed CPU time (System/IO-Wait/Hard-IRQ/Soft-IRQ/Steal/Guest)", &(settings->detailedCPUTime)));
    Panel_add(super, (Object*) CheckItem_newByRef("Count CPUs from 1 instead of 0", &(settings->countCPUsFromOne)));
+   Panel_add(super, (Object*) CheckItem_newByRef("Hide offline CPUs from CPU meter groups", &(settings->hideOfflineCPUsInMeters)));
+   Panel_add(super, (Object*) CheckItem_newByRef("Renumber visible CPUs sequentially when offline CPUs are hidden", &(settings->renumberCPUMetersSequentially)));
    Panel_add(super, (Object*) CheckItem_newByRef("Label CPUs based on SMT topology (e.g. 0a, 0b) instead of CPU index", &(settings->showCPUSMTLabels)));
    Panel_add(super, (Object*) CheckItem_newByRef("Update process names on every refresh", &(settings->updateProcessNames)));
    Panel_add(super, (Object*) CheckItem_newByRef("Add guest time in CPU meter percentage", &(settings->accountGuestInCPUMeter)));

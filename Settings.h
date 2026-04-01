@@ -74,6 +74,8 @@ typedef struct Settings_ {
    int delay;
 
    bool countCPUsFromOne;
+   bool hideOfflineCPUsInMeters;
+   bool renumberCPUMetersSequentially;
    bool detailedCPUTime;
    bool showCPUUsage;
    bool showCPUFrequency;

@@ -116,8 +116,12 @@ static bool Settings_validateMeters(Settings* this) {
    return anyMeter;
 }
 
+static unsigned int Settings_initialCpuCount(const Settings* this, const Machine* host) {
+   return this->hideOfflineCPUsInMeters ? host->activeCPUs : host->existingCPUs;
+}
+
 static void Settings_defaultMeters(Settings* this, const Machine* host) {
-   unsigned int initialCpuCount = host->activeCPUs;
+   unsigned int initialCpuCount = Settings_initialCpuCount(this, host);
    size_t sizes[] = { 3, 3 };
 
    if (initialCpuCount > 4 && initialCpuCount <= 128) {
@@ -467,6 +471,10 @@ static bool Settings_read(Settings* this, const char* fileName, const Machine* h
       } else if (String_eq(option[0], "cpu_count_from_zero")) {
          // old (inverted) naming also supported for backwards compatibility
          this->countCPUsFromOne = !atoi(option[1]);
+      } else if (String_eq(option[0], "hide_offline_cpus_in_meters")) {
+         this->hideOfflineCPUsInMeters = atoi(option[1]);
+      } else if (String_eq(option[0], "renumber_cpu_meters_sequentially")) {
+         this->renumberCPUMetersSequentially = atoi(option[1]);
       } else if (String_eq(option[0], "show_cpu_smt_labels")) {
          this->showCPUSMTLabels = atoi(option[1]);
       } else if (String_eq(option[0], "show_cpu_usage")) {
@@ -706,6 +714,8 @@ int Settings_write(const Settings* this, bool onCrash) {
    printSettingInteger("screen_tabs", this->screenTabs);
    printSettingInteger("detailed_cpu_time", this->detailedCPUTime);
    printSettingInteger("cpu_count_from_one", this->countCPUsFromOne);
+   printSettingInteger("hide_offline_cpus_in_meters", this->hideOfflineCPUsInMeters);
+   printSettingInteger("renumber_cpu_meters_sequentially", this->renumberCPUMetersSequentially);
    printSettingInteger("show_cpu_smt_labels", this->showCPUSMTLabels);
    printSettingInteger("show_cpu_usage", this->showCPUUsage);
    printSettingInteger("show_cpu_frequency", this->showCPUFrequency);
@@ -812,6 +822,8 @@ Settings* Settings_new(const Machine* host, Hashtable* dynamicMeters, Hashtable*
    this->highlightMegabytes = true;
    this->detailedCPUTime = false;
    this->countCPUsFromOne = false;
+   this->hideOfflineCPUsInMeters = true;
+   this->renumberCPUMetersSequentially = true;
    this->showCPUSMTLabels = false;
    this->showCPUUsage = true;
    this->showCPUFrequency = false;
