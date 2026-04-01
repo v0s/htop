@@ -10,7 +10,6 @@ in the source distribution for its full text.
 #include "Action.h"
 
 #include <assert.h>
-#include <pwd.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -125,9 +124,7 @@ static void addUserToVector(ht_key_t key, void* userCast, void* panelCast) {
 }
 
 bool Action_setUserOnly(const char* userName, uid_t* userId) {
-   const struct passwd* user = getpwnam(userName);
-   if (user) {
-      *userId = user->pw_uid;
+   if (Compat_getUidForUser(userName, userId)) {
       return true;
    }
    *userId = (uid_t)-1;

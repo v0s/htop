@@ -133,6 +133,7 @@ To install on the local system run `make install`. By default `make install` ins
       - libdemangle: use **libdemangle** (Solaris) to demangle function names
   * `--enable-static`:
     build a static htop binary; hwloc and delay accounting are not supported
+    - on glibc systems, the static build resolves user names and home directories from `/etc/passwd` directly to avoid loading host-specific NSS modules at runtime
     - default: *no*
   * `--enable-debug`:
     Enable asserts and internal sanity checks; implies a performance penalty

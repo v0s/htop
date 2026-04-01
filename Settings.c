@@ -13,7 +13,6 @@ in the source distribution for its full text.
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
-#include <pwd.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -844,9 +843,13 @@ Settings* Settings_new(const Machine* host, Hashtable* dynamicMeters, Hashtable*
       this->initialFilename = xStrdup(rcfile);
    } else {
       const char* home = getenv("HOME");
+      char* fallbackHome = NULL;
       if (!home || home[0] != '/') {
-         const struct passwd* pw = getpwuid(getuid());
-         home = (pw && pw->pw_dir && pw->pw_dir[0] == '/') ? pw->pw_dir : "";
+         if (Compat_getUserHome(getuid(), &fallbackHome) && fallbackHome && fallbackHome[0] == '/') {
+            home = fallbackHome;
+         } else {
+            home = "";
+         }
       }
       const char* xdgConfigHome = getenv("XDG_CONFIG_HOME");
       char* configDir = NULL;
@@ -866,6 +869,7 @@ Settings* Settings_new(const Machine* host, Hashtable* dynamicMeters, Hashtable*
       free(configDir);
 
       legacyDotfile = String_cat(home, "/.htoprc");
+      free(fallbackHome);
    }
 
    this->filename = xMalloc(PATH_MAX);

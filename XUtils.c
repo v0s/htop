@@ -14,6 +14,7 @@ in the source distribution for its full text.
 #include <fcntl.h>
 #include <limits.h>
 #include <math.h>
+#include <pwd.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -314,6 +315,135 @@ char* xStrndup(const char* str, size_t len) {
       fail();
    }
    return data;
+}
+
+#ifdef BUILD_STATIC
+/*
+ * Avoid libc NSS lookups in static builds. A statically linked glibc binary may
+ * still dlopen libnss_* modules from the target system for getpwuid/getpwnam,
+ * which breaks when the binary is moved across distributions with older glibc.
+ * Parse /etc/passwd directly instead.
+ */
+static bool Compat_parsePasswdLine(char* line, char** userName, uid_t* uid, char** homeDir) {
+   char* fields[7];
+   char* field = line;
+
+   for (size_t i = 0; i < ARRAYSIZE(fields) - 1; i++) {
+      fields[i] = field;
+      char* sep = strchr(field, ':');
+      if (!sep)
+         return false;
+      *sep = '\0';
+      field = sep + 1;
+   }
+   fields[ARRAYSIZE(fields) - 1] = field;
+
+   errno = 0;
+   char* end = NULL;
+   unsigned long parsedUid = strtoul(fields[2], &end, 10);
+   if (errno || !end || end == fields[2] || *end != '\0' || parsedUid > (unsigned long)((uid_t)-1))
+      return false;
+
+   if (userName)
+      *userName = fields[0];
+   if (uid)
+      *uid = (uid_t)parsedUid;
+   if (homeDir)
+      *homeDir = fields[5];
+   return true;
+}
+
+static bool Compat_lookupPasswd(const char* wantedName, uid_t wantedUid, char** foundName, char** foundHome, uid_t* foundUid) {
+   FILE* fp = fopen("/etc/passwd", "r");
+   if (!fp)
+      return false;
+
+   bool found = false;
+   char* line = NULL;
+   while ((line = String_readLine(fp))) {
+      char* userName = NULL;
+      char* homeDir = NULL;
+      uid_t uid = (uid_t)-1;
+
+      if (line[0] == '\0' || line[0] == '#')
+         goto next;
+
+      if (!Compat_parsePasswdLine(line, &userName, &uid, &homeDir))
+         goto next;
+
+      if (wantedName) {
+         if (!String_eq(userName, wantedName))
+            goto next;
+      } else if (uid != wantedUid) {
+         goto next;
+      }
+
+      if (foundName)
+         *foundName = xStrdup(userName);
+      if (foundHome)
+         *foundHome = xStrdup(homeDir);
+      if (foundUid)
+         *foundUid = uid;
+      found = true;
+
+next:
+      free(line);
+      if (found)
+         break;
+   }
+
+   fclose(fp);
+   return found;
+}
+#endif
+
+bool Compat_getUserName(uid_t uid, char** name) {
+   assert(name);
+   *name = NULL;
+
+#ifdef BUILD_STATIC
+   return Compat_lookupPasswd(NULL, uid, name, NULL, NULL);
+#else
+   const struct passwd* user = getpwuid(uid);
+   if (!user || !user->pw_name)
+      return false;
+
+   *name = xStrdup(user->pw_name);
+   return true;
+#endif
+}
+
+bool Compat_getUserHome(uid_t uid, char** home) {
+   assert(home);
+   *home = NULL;
+
+#ifdef BUILD_STATIC
+   return Compat_lookupPasswd(NULL, uid, NULL, home, NULL);
+#else
+   const struct passwd* user = getpwuid(uid);
+   if (!user || !user->pw_dir)
+      return false;
+
+   *home = xStrdup(user->pw_dir);
+   return true;
+#endif
+}
+
+bool Compat_getUidForUser(const char* userName, uid_t* uid) {
+   assert(userName);
+   assert(uid);
+   *uid = (uid_t)-1;
+
+#ifdef BUILD_STATIC
+   return Compat_lookupPasswd(userName, (uid_t)-1, NULL, NULL, uid);
+#else
+   const struct passwd* user = getpwnam(userName);
+   if (!user)
+      return false;
+
+   *uid = user->pw_uid;
+   return true;
+#endif
 }
 
 ssize_t full_write(int fd, const void* buf, size_t count) {

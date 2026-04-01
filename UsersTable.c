@@ -9,7 +9,6 @@ in the source distribution for its full text.
 
 #include "UsersTable.h"
 
-#include <pwd.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,10 +31,7 @@ void UsersTable_delete(UsersTable* this) {
 char* UsersTable_getRef(UsersTable* this, unsigned int uid) {
    char* name = Hashtable_get(this->users, uid);
    if (name == NULL) {
-      const struct passwd* userData = getpwuid(uid);
-      if (userData != NULL) {
-         name = xStrdup(userData->pw_name);
-      } else {
+      if (!Compat_getUserName(uid, &name)) {
          name = xStrdup("");
       }
       Hashtable_put(this->users, uid, name);
