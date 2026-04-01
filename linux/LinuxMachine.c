@@ -122,9 +122,43 @@ static void LinuxMachine_updateCPUcount(LinuxMachine* this) {
       LibSensors_reload();
 #endif
 
-   super->activeCPUs = active;
    assert(existing == currExisting);
    super->existingCPUs = currExisting;
+
+   /* Cross-reference with /proc/stat to handle containers where sysfs
+    * exposes all host CPUs but only a subset is available to the container. */
+   FILE* file = fopen(PROCSTATFILE, "r");
+   if (file) {
+      char buffer[PROC_LINE_LENGTH + 1];
+      bool* cpuInStat = xCalloc(currExisting, sizeof(bool));
+      unsigned int statActive = 0;
+
+      while (fgets(buffer, sizeof(buffer), file)) {
+         if (!String_startsWith(buffer, "cpu"))
+            break;
+         if (buffer[3] < '0' || buffer[3] > '9')
+            continue; /* skip "cpu " aggregate line */
+         unsigned int cpuid;
+         if (sscanf(buffer, "cpu%u", &cpuid) == 1 && cpuid < currExisting) {
+            cpuInStat[cpuid] = true;
+            statActive++;
+         }
+      }
+      fclose(file);
+
+      if (statActive < active) {
+         /* Fewer CPUs in /proc/stat than sysfs reports online;
+          * mark the absent ones as offline. */
+         for (unsigned int i = 0; i < currExisting; i++) {
+            if (!cpuInStat[i])
+               this->cpuData[i + 1].online = false;
+         }
+         active = statActive;
+      }
+      free(cpuInStat);
+   }
+
+   super->activeCPUs = active;
 }
 
 static void LinuxMachine_scanMemoryInfo(LinuxMachine* this) {
@@ -485,14 +519,21 @@ static void LinuxMachine_scanCPUTime(LinuxMachine* this) {
       adjCpuIdProcessed[adjCpuId] = true;
    }
 
+   unsigned int active = 0;
    for (unsigned int i = 0; i <= super->existingCPUs; i++) {
       if (!adjCpuIdProcessed[i]) {
          // Skipped an ID, but /proc/stat is ordered => threads in between are offline
          memset(&this->cpuData[i], 0, sizeof(CPUData));
+      } else if (i > 0) {
+         active++;
       }
    }
 
-   this->period = (double)this->cpuData[0].totalPeriod / super->activeCPUs;
+   // Recount active CPUs based on /proc/stat presence, which correctly
+   // reflects container CPU restrictions that sysfs may not show.
+   this->super.activeCPUs = active;
+
+   this->period = (double)this->cpuData[0].totalPeriod / active;
 
    if (!ferror(file) && !feof(file)) {
       char buffer[PROC_LINE_LENGTH + 1];

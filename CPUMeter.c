@@ -45,6 +45,7 @@ static const int CPUMeter_attributes_summary[] = {
 
 typedef struct CPUMeterData_ {
    unsigned int cpus;
+   int count;
    Meter** meters;
 } CPUMeterData;
 
@@ -68,7 +69,13 @@ static void CPUMeter_init(Meter* this) {
          }
          xSnprintf(caption, sizeof(caption), "%2d%c", coreID, threadLetter);
       } else {
-         xSnprintf(caption, sizeof(caption), "%3u", Settings_cpuId(host->settings, cpu - 1));
+         /* Compute sequential index among online CPUs for consecutive numbering */
+         unsigned int displayIdx = 0;
+         for (unsigned int i = 0; i < cpu - 1; i++) {
+            if (Machine_isCPUonline(host, i))
+               displayIdx++;
+         }
+         xSnprintf(caption, sizeof(caption), "%3u", Settings_cpuId(host->settings, displayIdx));
       }
       Meter_setCaption(this, caption);
    }
@@ -233,8 +240,10 @@ static void CPUMeter_display(const Object* cast, RichString* out) {
    #endif
 }
 
+static void CPUMeterCommonInit(Meter* this);
+
 static void AllCPUsMeter_getRange(const Meter* this, int* start, int* count) {
-   unsigned int cpus = this->host->existingCPUs;
+   unsigned int cpus = this->host->activeCPUs;
    switch (Meter_name(this)[0]) {
       default:
       case 'A': // All
@@ -254,9 +263,28 @@ static void AllCPUsMeter_getRange(const Meter* this, int* start, int* count) {
 
 static void AllCPUsMeter_updateValues(Meter* this) {
    CPUMeterData* data = this->meterData;
+
+   /* Reinitialize if active CPU count changed (e.g. container CPU limits
+    * detected after first /proc/stat scan, or CPU hotplug) */
+   if (data->cpus != this->host->activeCPUs) {
+      MeterModeId mode = this->mode;
+
+      Meter** meters = data->meters;
+      int oldCount = data->count;
+      for (int i = 0; i < oldCount; i++)
+         Meter_delete((Object*)meters[i]);
+      free(data->meters);
+      free(data);
+      this->meterData = NULL;
+
+      CPUMeterCommonInit(this);
+      Meter_updateMode(this, mode);
+
+      data = this->meterData;
+   }
+
    Meter** meters = data->meters;
-   int start, count;
-   AllCPUsMeter_getRange(this, &start, &count);
+   int count = data->count;
    for (int i = 0; i < count; i++)
       Meter_updateValues(meters[i]);
 }
@@ -268,17 +296,28 @@ static void CPUMeterCommonInit(Meter* this) {
    CPUMeterData* data = this->meterData;
    if (!data) {
       data = xCalloc(1, sizeof(CPUMeterData));
-      data->cpus = this->host->existingCPUs;
+      data->cpus = this->host->activeCPUs;
+      data->count = count;
       data->meters = count ? xCalloc(count, sizeof(Meter*)) : NULL;
       this->meterData = data;
    }
 
    Meter** meters = data->meters;
-   for (int i = 0; i < count; i++) {
-      if (!meters[i])
-         meters[i] = Meter_new(this->host, start + i + 1, (const MeterClass*) Class(CPUMeter));
 
-      Meter_init(meters[i]);
+   /* Enumerate online CPUs and create meters for those in [start, start+count) of the online ordering */
+   const Machine* host = this->host;
+   int onlineIdx = 0;
+   int meterIdx = 0;
+   for (unsigned int i = 0; i < host->existingCPUs && meterIdx < count; i++) {
+      if (!Machine_isCPUonline(host, i))
+         continue;
+      if (onlineIdx >= start) {
+         if (!meters[meterIdx])
+            meters[meterIdx] = Meter_new(this->host, i + 1, (const MeterClass*) Class(CPUMeter));
+         Meter_init(meters[meterIdx]);
+         meterIdx++;
+      }
+      onlineIdx++;
    }
 }
 
@@ -286,8 +325,7 @@ static void CPUMeterCommonUpdateMode(Meter* this, MeterModeId mode, int ncol) {
    CPUMeterData* data = this->meterData;
    Meter** meters = data->meters;
    this->mode = mode;
-   int start, count;
-   AllCPUsMeter_getRange(this, &start, &count);
+   int count = data->count;
    if (!count) {
       this->h = 1;
       return;
@@ -303,8 +341,7 @@ static void CPUMeterCommonUpdateMode(Meter* this, MeterModeId mode, int ncol) {
 static void AllCPUsMeter_done(Meter* this) {
    CPUMeterData* data = this->meterData;
    Meter** meters = data->meters;
-   int start, count;
-   AllCPUsMeter_getRange(this, &start, &count);
+   int count = data->count;
    for (int i = 0; i < count; i++)
       Meter_delete((Object*)meters[i]);
    free(data->meters);
@@ -330,8 +367,7 @@ static void OctoColCPUsMeter_updateMode(Meter* this, MeterModeId mode) {
 static void CPUMeterCommonDraw(Meter* this, int x, int y, int w, int ncol) {
    CPUMeterData* data = this->meterData;
    Meter** meters = data->meters;
-   int start, count;
-   AllCPUsMeter_getRange(this, &start, &count);
+   int count = data->count;
    int colwidth = w / ncol;
    int diff = w % ncol;
    int nrows = (count + ncol - 1) / ncol;
@@ -359,8 +395,7 @@ static void OctoColCPUsMeter_draw(Meter* this, int x, int y, int w) {
 static void SingleColCPUsMeter_draw(Meter* this, int x, int y, int w) {
    CPUMeterData* data = this->meterData;
    Meter** meters = data->meters;
-   int start, count;
-   AllCPUsMeter_getRange(this, &start, &count);
+   int count = data->count;
    for (int i = 0; i < count; i++) {
       meters[i]->draw(meters[i], x, y, w);
       y += meters[i]->h;
