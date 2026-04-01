@@ -122,7 +122,7 @@ static unsigned int Settings_initialCpuCount(const Settings* this, const Machine
 
 static void Settings_defaultMeters(Settings* this, const Machine* host) {
    unsigned int initialCpuCount = Settings_initialCpuCount(this, host);
-   size_t sizes[] = { 3, 3 };
+   size_t sizes[] = { 4, 3 };
 
    if (initialCpuCount > 4 && initialCpuCount <= 128) {
       sizes[1]++;
@@ -169,10 +169,12 @@ static void Settings_defaultMeters(Settings* this, const Machine* host) {
       this->hColumns[0].names[0] = xStrdup("AllCPUs");
       this->hColumns[0].modes[0] = BAR_METERMODE;
    }
-   this->hColumns[0].names[1] = xStrdup("Memory");
+   this->hColumns[0].names[1] = xStrdup("DiskIO");
    this->hColumns[0].modes[1] = BAR_METERMODE;
-   this->hColumns[0].names[2] = xStrdup("Swap");
+   this->hColumns[0].names[2] = xStrdup("Memory");
    this->hColumns[0].modes[2] = BAR_METERMODE;
+   this->hColumns[0].names[3] = xStrdup("Swap");
+   this->hColumns[0].modes[3] = BAR_METERMODE;
    this->hColumns[1].names[r] = xStrdup("Tasks");
    this->hColumns[1].modes[r++] = TEXT_METERMODE;
    this->hColumns[1].names[r] = xStrdup("LoadAverage");
@@ -814,9 +816,9 @@ Settings* Settings_new(const Machine* host, Hashtable* dynamicMeters, Hashtable*
    this->shadowOtherUsers = false;
    this->showThreadNames = false;
    this->hideKernelThreads = true;
-   this->hideUserlandThreads = false;
+   this->hideUserlandThreads = true;
    this->hideRunningInContainer = false;
-   this->highlightBaseName = false;
+   this->highlightBaseName = true;
    this->highlightDeletedExe = true;
    this->shadowDistPathPrefix = false;
    this->highlightMegabytes = true;
